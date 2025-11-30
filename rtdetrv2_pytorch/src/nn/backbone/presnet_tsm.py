@@ -11,7 +11,7 @@ from .common import get_activation, FrozenBatchNorm2d
 from ...core import register
 
 
-__all__ = ['PResNet']
+__all__ = ['PResNet_TSM']
 
 
 ResNet_cfg = {
@@ -79,6 +79,7 @@ class BasicBlock(nn.Module):
         super().__init__()
 
         self.shortcut = shortcut
+        self.n_frames = 1
 
         if not shortcut:
             if variant == 'd' and stride == 2:
@@ -118,6 +119,8 @@ class BottleNeck(nn.Module):
 
     def __init__(self, ch_in, ch_out, stride, shortcut, act='relu', variant='b'):
         super().__init__()
+
+        self.n_frames = 1
 
         if variant == 'a':
             stride1, stride2 = stride, 1
@@ -164,20 +167,23 @@ class BottleNeck(nn.Module):
 
 
 class Blocks(nn.Module):
-    def __init__(self, block, ch_in, ch_out, count, stage_num, act='relu', variant='b'):
+    def __init__(self, block, ch_in, ch_out, count, stage_num, act='relu', variant='b', n_frames=8):
         super().__init__()
 
         self.blocks = nn.ModuleList()
         for i in range(count):
-            self.blocks.append(
-                block(
-                    ch_in, 
-                    ch_out,
-                    stride=2 if i == 0 and stage_num != 2 else 1, 
-                    shortcut=False if i == 0 else True,
-                    variant=variant,
-                    act=act)
-            )
+            # Block 인스턴스 생성
+            blk = block(
+                ch_in, 
+                ch_out,
+                stride=2 if i == 0 and stage_num != 2 else 1, 
+                shortcut=False if i == 0 else True,
+                variant=variant,
+                act=act)
+            
+            # Block에 n_frames 추가
+            blk.n_frames = n_frames
+            self.blocks.append(blk)
 
             if i == 0:
                 ch_in = ch_out * block.expansion
@@ -228,8 +234,9 @@ class PResNet(nn.Module):
         self.res_layers = nn.ModuleList()
         for i in range(num_stages):
             stage_num = i + 2
+            # Blocks 생성 시 n_frames 전달
             self.res_layers.append(
-                Blocks(block, ch_in, ch_out_list[i], block_nums[i], stage_num, act=act, variant=variant)
+                Blocks(block, ch_in, ch_out_list[i], block_nums[i], stage_num, act=act, variant=variant, n_frames=n_frames)
             )
             ch_in = _out_channels[i]
 
